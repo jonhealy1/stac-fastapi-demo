@@ -27,28 +27,13 @@ class TransactionsClient(BaseTransactionsClient):
 
     def create_item(self, model: stac_types.Item, **kwargs):
         """Create item."""
-        base_url = str(kwargs["request"].base_url)
-        item_links = ItemLinks(
-            collection_id=model["collection"], item_id=model["id"], base_url=base_url
-        ).create_links()
-        model["links"] = item_links
-        with self.client.start_session(causal_consistency=True) as session:
-            now = datetime.utcnow().strftime(DATETIME_RFC339)
-            if "created" not in model["properties"]:
-                model["properties"]["created"] = str(now)
-            self.item_table.insert_one(model, session=session)
-            return model
+        self.item_table.insert_one(model)
+        return "success"
 
     def create_collection(self, model: stac_types.Collection, **kwargs):
         """Create collection."""
-        base_url = str(kwargs["request"].base_url)
-        collection_links = CollectionLinks(
-            collection_id=model["id"], base_url=base_url
-        ).create_links()
-        model["links"] = collection_links
-
-        with self.client.start_session(causal_consistency=True) as session:
-            self.collection_table.insert_one(model, session=session)
+        self.collection_table.insert_one(model)
+        return "success"
 
     def update_item(self, model: stac_types.Item, **kwargs):
         """Update item."""
