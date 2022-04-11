@@ -1,25 +1,16 @@
 """Item crud client."""
 import json
-from datetime import datetime
-from typing import List, Optional, Set, Union
-from urllib.parse import urljoin
-from bson.json_util import dumps, loads
-
+from typing import Union, Optional, List
+from bson.json_util import dumps
 import attr
-import pymongo
-from pymongo import MongoClient
-import stac_pydantic
-from fastapi import HTTPException
-from geojson_pydantic.geometries import Polygon
+from datetime import datetime
 from pydantic import ValidationError
-from stac_pydantic.links import Relations
-from stac_pydantic.shared import MimeTypes
+from stac_fastapi.types.search import BaseSearchPostRequest
 
 from stac_fastapi.demo.config import MongoSettings
 from stac_fastapi.demo.session import Session
-from stac_fastapi.types.config import Settings
+from fastapi import HTTPException
 from stac_fastapi.types.core import BaseCoreClient
-from stac_fastapi.types.search import BaseSearchPostRequest
 from stac_fastapi.types.stac import Collection, Collections, Item, ItemCollection
 
 NumType = Union[float, int]
@@ -50,69 +41,20 @@ class CoreCrudClient(BaseCoreClient):
         self, collection_id: str, limit: int = 10, token: str = None, **kwargs
     ) -> ItemCollection:
         """Read an item collection from the database."""
-        links = []
-        base_url = str(kwargs["request"].base_url)
-
-        with self.client.start_session() as session:
-            collection_children = (
-                self.item_table.find({"collection": collection_id}, session=session)
-                .limit(limit)
-                .sort(
-                    [
-                        ("properties.datetime", pymongo.ASCENDING),
-                        ("id", pymongo.ASCENDING),
-                    ]
-                )
-            )
-
-            matched = self.item_table.count_documents({"collection": collection_id})
-
-        context_obj = None
-        if self.extension_is_enabled("ContextExtension"):
-            count = len(collection_children)
-            context_obj = {
-                "returned": count if count <= 10 else limit,
-                "limit": limit,
-                "matched": matched or None,
-            }
-
-        return ItemCollection(
-            type="FeatureCollection",
-            features=collection_children,
-            links=links,
-            context=context_obj,
+        collection_children = (
+            self.item_table.find({"collection": collection_id})
         )
+        items = [json.loads(dumps(item)) for item in collection_children]
+
+        return {
+            "type": "FeatureCollection",
+            "features": items
+        }
 
     def get_item(self, item_id: str, collection_id: str, **kwargs) -> Item:
         """Get item by item id, collection id."""
-        with self.client.start_session() as session:
-            item = self.item_table.find_one(
-                {"id": item_id, "collection": collection_id}, session=session
-            )
+        item = self.item_table.find_one({"id": item_id, "collection": collection_id})
         return item
-
-    def _return_date(self, datetime):
-        datetime = datetime.split("/")
-        if len(datetime) == 1:
-            datetime = datetime[0][0:19] + "Z"
-            return {"properties.datetime": {"$eq": datetime}}
-        else:
-            start_date = datetime[0]
-            end_date = datetime[1]
-            if start_date != ".." and end_date != "..":
-                start_date = start_date[0:19] + "Z"
-                end_date = end_date[0:19] + "Z"
-            elif start_date != "..":
-                start_date = start_date[0:19] + "Z"
-                end_date = "2200-12-01T12:31:12Z"
-            elif end_date != "..":
-                start_date = "1900-10-01T00:00:00Z"
-                end_date = end_date[0:19] + "Z"
-            else:
-                start_date = "1900-10-01T00:00:00Z"
-                end_date = "2200-12-01T12:31:12Z"
-
-            return {"properties.datetime": {"$lt": end_date, "$gte": start_date}}
 
     def get_search(
         self,
@@ -138,29 +80,6 @@ class CoreCrudClient(BaseCoreClient):
         }
         if datetime:
             base_args["datetime"] = datetime
-        if sortby:
-            # https://github.com/radiantearth/stac-spec/tree/master/api-spec/extensions/sort#http-get-or-post-form
-            sort_param = []
-            for sort in sortby:
-                sort_param.append(
-                    {
-                        "field": sort[1:],
-                        "direction": "asc" if sort[0] == "+" else "desc",
-                    }
-                )
-            base_args["sortby"] = sort_param
-
-        if fields:
-            includes = set()
-            excludes = set()
-            for field in fields:
-                if field[0] == "-":
-                    excludes.add(field[1:])
-                elif field[0] == "+":
-                    includes.add(field[1:])
-                else:
-                    includes.add(field)
-            base_args["fields"] = {"include": includes, "exclude": excludes}
 
         # Do the request
         try:
@@ -178,28 +97,6 @@ class CoreCrudClient(BaseCoreClient):
         base_url = str(kwargs["request"].base_url)
         queries = {}
 
-        if search_request.collections:
-            for collection in search_request.collections:
-                collection_filter = {"collection": collection}
-                queries.update(**collection_filter)
-
-        if search_request.ids:
-            id_filter = {"id": {"$in": search_request.ids}}
-            queries.update(**id_filter)
-
-        if search_request.bbox:
-            # check for 3d bbox
-            if len(search_request.bbox) == 6:
-                search_request.bbox = [
-                    search_request.bbox[0],
-                    search_request.bbox[1],
-                    search_request.bbox[3],
-                    search_request.bbox[4],
-                ]
-            geom = Polygon.from_bounds(*search_request.bbox).dict(exclude_none=True)
-            bbox_filter = {"geometry": {"$geoIntersects": {"$geometry": geom}}}
-            queries.update(**bbox_filter)
-
         if search_request.intersects:
             intersect_filter = {
                 "geometry": {
@@ -213,10 +110,6 @@ class CoreCrudClient(BaseCoreClient):
             }
             queries.update(**intersect_filter)
 
-        if search_request.datetime:
-            date_filter = self._return_date(str(search_request.datetime))
-            queries.update(**date_filter)
-
         if search_request.query:
             if type(search_request.query) == str:
                 search_request.query = json.loads(search_request.query)
@@ -226,61 +119,11 @@ class CoreCrudClient(BaseCoreClient):
                     key_filter = {field: {f"${op}": value}}
                     queries.update(**key_filter)
 
-        sort_list = []
-        if search_request.sortby:
-            for sort in search_request.sortby:
-                if sort.field == "datetime":
-                    sort.field = "properties.datetime"
-                if sort.direction == "asc":
-                    sort.direction = pymongo.ASCENDING
-                else:
-                    sort.direction = pymongo.DESCENDING
-                sort_list.append((sort.field, sort.direction))
-        else:
-            sort_list = [("properties.datetime", pymongo.ASCENDING)]
+        results = (self.item_table.find(queries).limit(search_request.limit))
 
-        with self.client.start_session() as session:
-            results = (
-                self.item_table.find(queries, session=session)
-                .limit(search_request.limit)
-                .sort(sort_list)
-            )
-
-            matched = self.item_table.count_documents(queries)
-            links = []
-
-        if self.extension_is_enabled("FieldsExtension"):
-            if search_request.query is not None:
-                query_include: Set[str] = set(
-                    [
-                        k if k in Settings.get().indexed_fields else f"properties.{k}"
-                        for k in search_request.query.keys()
-                    ]
-                )
-                if not search_request.fields.include:
-                    search_request.fields.include = query_include
-                else:
-                    search_request.fields.include.union(query_include)
-
-            filter_kwargs = search_request.fields.filter_fields
-
-            results = [
-                json.loads(stac_pydantic.Item(**feat).json(**filter_kwargs))
-                for feat in results
-            ]
-
-        context_obj = None
-        if self.extension_is_enabled("ContextExtension"):
-            count = len(results)
-            context_obj = {
-                "returned": count if count <= 10 else search_request.limit,
-                "limit": search_request.limit,
-                "matched": matched or None,
-            }
+        items = [json.loads(dumps(item)) for item in results]
 
         return ItemCollection(
             type="FeatureCollection",
-            features=results,
-            links=links,
-            context=context_obj,
+            features=items
         )
