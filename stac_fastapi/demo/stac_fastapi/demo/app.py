@@ -10,14 +10,12 @@ from stac_fastapi.extensions.core import (
 )
 from stac_fastapi.demo.config import MongoSettings
 from stac_fastapi.demo.core import CoreCrudClient
-from stac_fastapi.demo.session import Session
 from stac_fastapi.demo.transactions import TransactionsClient
 
 settings = MongoSettings()
-session = Session.create_from_settings(settings)
 
 extensions = [
-    TransactionExtension(client=TransactionsClient(session=session), settings=settings),
+    TransactionExtension(client=TransactionsClient(), settings=settings),
     SortExtension(),
     ContextExtension(),
     QueryExtension(),
@@ -29,7 +27,7 @@ post_request_model = create_post_request_model(extensions)
 api = StacApi(
     settings=settings,
     extensions=extensions,
-    client=CoreCrudClient(session=session, post_request_model=post_request_model),
+    client=CoreCrudClient(post_request_model=post_request_model),
     search_get_request_model=create_get_request_model(extensions),
     search_post_request_model=post_request_model,
 )
