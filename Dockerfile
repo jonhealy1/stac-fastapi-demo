@@ -15,4 +15,4 @@ WORKDIR /app
 
 COPY . /app
 
-RUN pip install --no-cache-dir -e ./stac_fastapi/dynamo[dev,server]
+RUN pip install --no-cache-dir -e ./stac_fastapi/demo[dev,server]
