@@ -6,6 +6,7 @@ from stac_fastapi.extensions.core import (
     ContextExtension,
     TransactionExtension,
     TokenPaginationExtension,
+    QueryExtension,
 )
 from stac_fastapi.demo.config import MongoSettings
 from stac_fastapi.demo.core import CoreCrudClient
@@ -19,6 +20,7 @@ extensions = [
     TransactionExtension(client=TransactionsClient(session=session), settings=settings),
     SortExtension(),
     ContextExtension(),
+    QueryExtension(),
     TokenPaginationExtension(),
 ]
 
