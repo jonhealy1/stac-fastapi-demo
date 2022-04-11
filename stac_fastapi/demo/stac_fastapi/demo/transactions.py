@@ -7,10 +7,8 @@ import attr
 from stac_pydantic.shared import DATETIME_RFC339
 
 from stac_fastapi.demo.config import MongoSettings
-from stac_fastapi.demo.session import Session
 from stac_fastapi.types import stac as stac_types
 from stac_fastapi.types.core import BaseTransactionsClient
-from stac_fastapi.types.links import CollectionLinks, ItemLinks
 
 logger = logging.getLogger(__name__)
 
