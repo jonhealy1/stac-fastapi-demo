@@ -3,7 +3,7 @@
 import attr
 from pymongo import MongoClient
 
-from stac_fastapi.mongo.session import Session
+from stac_fastapi.demo.session import Session
 from stac_fastapi.types import stac as stac_types
 from stac_fastapi.types.errors import ConflictError, ForeignKeyError, NotFoundError
 

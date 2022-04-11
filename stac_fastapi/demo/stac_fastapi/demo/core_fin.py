@@ -1,13 +1,12 @@
 """Item crud client."""
 import json
+import logging
 from datetime import datetime
-from typing import List, Optional, Set, Union
+from typing import List, Optional, Set, Type, Union
 from urllib.parse import urljoin
-from bson.json_util import dumps, loads
 
 import attr
 import pymongo
-from pymongo import MongoClient
 import stac_pydantic
 from fastapi import HTTPException
 from geojson_pydantic.geometries import Polygon
@@ -15,12 +14,16 @@ from pydantic import ValidationError
 from stac_pydantic.links import Relations
 from stac_pydantic.shared import MimeTypes
 
-from stac_fastapi.demo.config import MongoSettings
-from stac_fastapi.demo.session import Session
+from stac_fastapi.mongo import serializers
+from stac_fastapi.mongo.config import MongoSettings
+from stac_fastapi.mongo.session import Session
+from stac_fastapi.mongo.types.error_checks import ErrorChecks
 from stac_fastapi.types.config import Settings
 from stac_fastapi.types.core import BaseCoreClient
 from stac_fastapi.types.search import BaseSearchPostRequest
 from stac_fastapi.types.stac import Collection, Collections, Item, ItemCollection
+
+logger = logging.getLogger(__name__)
 
 NumType = Union[float, int]
 
@@ -30,27 +33,73 @@ class CoreCrudClient(BaseCoreClient):
     """Client for core endpoints defined by stac."""
 
     session: Session = attr.ib(default=attr.Factory(Session.create_from_env))
+    item_serializer: Type[serializers.Serializer] = attr.ib(
+        default=serializers.ItemSerializer
+    )
+    collection_serializer: Type[serializers.Serializer] = attr.ib(
+        default=serializers.CollectionSerializer
+    )
     settings = MongoSettings()
     client = settings.create_client
     item_table = client.stac.stac_item
     collection_table = client.stac.stac_collection
 
+    @staticmethod
+    def _lookup_id(id: str, table, session):
+        """Lookup row by id."""
+        pass
+
     def all_collections(self, **kwargs) -> Collections:
         """Read all collections from the database."""
-        collections = self.collection_table.find()
-        collections = [json.loads(dumps(collection)) for collection in collections]
-        return collections
+        base_url = str(kwargs["request"].base_url)
+
+        with self.client.start_session(causal_consistency=True) as session:
+            collections = self.collection_table.find({}, session=session)
+
+            serialized_collections = [
+                self.collection_serializer.db_to_stac(collection, base_url=base_url)
+                for collection in collections
+            ]
+        links = [
+            {
+                "rel": Relations.root.value,
+                "type": MimeTypes.json,
+                "href": base_url,
+            },
+            {
+                "rel": Relations.parent.value,
+                "type": MimeTypes.json,
+                "href": base_url,
+            },
+            {
+                "rel": Relations.self.value,
+                "type": MimeTypes.json,
+                "href": urljoin(base_url, "collections"),
+            },
+        ]
+        collection_list = Collections(
+            collections=serialized_collections or [], links=links
+        )
+        return collection_list
 
     def get_collection(self, collection_id: str, **kwargs) -> Collection:
         """Get collection by id."""
-        collection = self.collection_table.find_one({"id": collection_id})
-        return json.loads(dumps(collection))
+        base_url = str(kwargs["request"].base_url)
+
+        with self.client.start_session(causal_consistency=True) as session:
+            error_check = ErrorChecks(session=session, client=self.client)
+            error_check._check_collection_not_found(collection_id)
+            collection = self.collection_table.find_one(
+                {"id": collection_id}, session=session
+            )
+        return self.collection_serializer.db_to_stac(collection, base_url)
 
     def item_collection(
         self, collection_id: str, limit: int = 10, token: str = None, **kwargs
     ) -> ItemCollection:
         """Read an item collection from the database."""
         links = []
+        response_features = []
         base_url = str(kwargs["request"].base_url)
 
         with self.client.start_session() as session:
@@ -67,9 +116,14 @@ class CoreCrudClient(BaseCoreClient):
 
             matched = self.item_table.count_documents({"collection": collection_id})
 
+            for item in collection_children:
+                response_features.append(
+                    self.item_serializer.db_to_stac(item, base_url=base_url)
+                )
+
         context_obj = None
         if self.extension_is_enabled("ContextExtension"):
-            count = len(collection_children)
+            count = len(response_features)
             context_obj = {
                 "returned": count if count <= 10 else limit,
                 "limit": limit,
@@ -78,18 +132,21 @@ class CoreCrudClient(BaseCoreClient):
 
         return ItemCollection(
             type="FeatureCollection",
-            features=collection_children,
+            features=response_features,
             links=links,
             context=context_obj,
         )
 
     def get_item(self, item_id: str, collection_id: str, **kwargs) -> Item:
         """Get item by item id, collection id."""
+        base_url = str(kwargs["request"].base_url)
         with self.client.start_session() as session:
+            error_check = ErrorChecks(session=session, client=self.client)
+            error_check._check_item_not_found(item_id, collection_id)
             item = self.item_table.find_one(
                 {"id": item_id, "collection": collection_id}, session=session
             )
-        return item
+        return self.item_serializer.db_to_stac(item, base_url)
 
     def _return_date(self, datetime):
         datetime = datetime.split("/")
@@ -240,14 +297,20 @@ class CoreCrudClient(BaseCoreClient):
             sort_list = [("properties.datetime", pymongo.ASCENDING)]
 
         with self.client.start_session() as session:
-            results = (
+            items = (
                 self.item_table.find(queries, session=session)
                 .limit(search_request.limit)
                 .sort(sort_list)
             )
 
             matched = self.item_table.count_documents(queries)
+
+            results = []
             links = []
+
+            for item in items:
+                item = self.item_serializer.db_to_stac(item, base_url=base_url)
+                results.append(item)
 
         if self.extension_is_enabled("FieldsExtension"):
             if search_request.query is not None:

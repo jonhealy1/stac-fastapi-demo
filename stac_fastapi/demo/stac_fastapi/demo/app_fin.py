@@ -2,24 +2,30 @@
 from stac_fastapi.api.app import StacApi
 from stac_fastapi.api.models import create_get_request_model, create_post_request_model
 from stac_fastapi.extensions.core import (
-    SortExtension,
     ContextExtension,
-    TransactionExtension,
+    FieldsExtension,
+    SortExtension,
     TokenPaginationExtension,
+    TransactionExtension,
 )
+from stac_fastapi.extensions.third_party import BulkTransactionExtension
 from stac_fastapi.demo.config import MongoSettings
 from stac_fastapi.demo.core import CoreCrudClient
+from stac_fastapi.demo.extensions import QueryExtension
 from stac_fastapi.demo.session import Session
-from stac_fastapi.demo.transactions import TransactionsClient
+from stac_fastapi.demo.transactions import BulkTransactionsClient, TransactionsClient
 
 settings = MongoSettings()
 session = Session.create_from_settings(settings)
 
 extensions = [
     TransactionExtension(client=TransactionsClient(session=session), settings=settings),
+    BulkTransactionExtension(client=BulkTransactionsClient(session=session)),
+    FieldsExtension(),
+    QueryExtension(),
     SortExtension(),
-    ContextExtension(),
     TokenPaginationExtension(),
+    ContextExtension(),
 ]
 
 post_request_model = create_post_request_model(extensions)
@@ -52,3 +58,16 @@ def run():
 
 if __name__ == "__main__":
     run()
+
+
+# def create_handler(app):
+#     """Create a handler to use with AWS Lambda if mangum available."""
+#     try:
+#         from mangum import Mangum
+
+#         return Mangum(app)
+#     except ImportError:
+#         return None
+
+
+# handler = create_handler(app)
