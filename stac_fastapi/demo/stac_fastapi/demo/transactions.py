@@ -18,8 +18,6 @@ logger = logging.getLogger(__name__)
 @attr.s
 class TransactionsClient(BaseTransactionsClient):
     """Transactions extension specific CRUD operations."""
-
-    session: Session = attr.ib(default=attr.Factory(Session.create_from_env))
     settings = MongoSettings()
     client = settings.create_client
     item_table = client.stac.stac_item
@@ -37,12 +35,7 @@ class TransactionsClient(BaseTransactionsClient):
 
     def update_item(self, model: stac_types.Item, **kwargs):
         """Update item."""
-        base_url = str(kwargs["request"].base_url)
-
-        with self.client.start_session(causal_consistency=True) as session:
-            self.delete_item(
-                item_id=model["id"], collection_id=model["collection"], session=session
-            )
+        self.delete_item(item_id=model["id"], collection_id=model["collection"])
         now = datetime.utcnow().strftime(DATETIME_RFC339)
         model["properties"]["updated"] = str(now)
         self.create_item(model, **kwargs)
@@ -55,12 +48,8 @@ class TransactionsClient(BaseTransactionsClient):
 
     def delete_item(self, item_id: str, collection_id: str, **kwargs):
         """Delete item."""
-        with self.client.start_session(causal_consistency=True) as session:
-            self.item_table.delete_one(
-                {"id": item_id, "collection": collection_id}, session=session
-            )
+        self.item_table.delete_one({"id": item_id, "collection": collection_id})
 
     def delete_collection(self, collection_id: str, **kwargs):
         """Delete collection."""
-        with self.client.start_session(causal_consistency=True) as session:
-            self.collection_table.delete_one({"id": collection_id}, session=session)
+        self.collection_table.delete_one({"id": collection_id})
