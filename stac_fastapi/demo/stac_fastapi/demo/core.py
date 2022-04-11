@@ -8,7 +8,6 @@ from pydantic import ValidationError
 from stac_fastapi.types.search import BaseSearchPostRequest
 
 from stac_fastapi.demo.config import MongoSettings
-from stac_fastapi.demo.session import Session
 from fastapi import HTTPException
 from stac_fastapi.types.core import BaseCoreClient
 from stac_fastapi.types.stac import Collection, Collections, Item, ItemCollection
@@ -19,8 +18,6 @@ NumType = Union[float, int]
 @attr.s
 class CoreCrudClient(BaseCoreClient):
     """Client for core endpoints defined by stac."""
-
-    session: Session = attr.ib(default=attr.Factory(Session.create_from_env))
     settings = MongoSettings()
     client = settings.create_client
     item_table = client.stac.stac_item
