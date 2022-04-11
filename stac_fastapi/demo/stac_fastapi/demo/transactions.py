@@ -9,6 +9,7 @@ from stac_pydantic.shared import DATETIME_RFC339
 from stac_fastapi.demo.config import MongoSettings
 from stac_fastapi.types import stac as stac_types
 from stac_fastapi.types.core import BaseTransactionsClient
+from stac_fastapi.demo.types.error_checks import ErrorChecks
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ class TransactionsClient(BaseTransactionsClient):
     client = settings.create_client
     item_table = client.stac.stac_item
     collection_table = client.stac.stac_collection
+    error_check = ErrorChecks(client=client)
 
     def create_item(self, model: stac_types.Item, **kwargs):
         """Create item."""
@@ -28,6 +30,7 @@ class TransactionsClient(BaseTransactionsClient):
 
     def create_collection(self, model: stac_types.Collection, **kwargs):
         """Create collection."""
+        self.error_check.check_collection_conflict(model)
         self.collection_table.insert_one(model)
         return "success"
 
