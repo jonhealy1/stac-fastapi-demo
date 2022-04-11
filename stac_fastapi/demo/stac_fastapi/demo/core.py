@@ -75,17 +75,7 @@ class CoreCrudClient(BaseCoreClient):
             "token": token,
             "query": json.loads(query) if query else query,
         }
-        if datetime:
-            base_args["datetime"] = datetime
-
-        # Do the request
-        try:
-            search_request = self.post_request_model(**base_args)
-        except ValidationError:
-            raise HTTPException(status_code=400, detail="Invalid parameters provided")
-        resp = self.post_search(search_request, request=kwargs["request"])
-
-        return resp
+        pass
 
     def post_search(
         self, search_request: BaseSearchPostRequest, **kwargs
