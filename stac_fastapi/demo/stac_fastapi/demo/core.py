@@ -51,7 +51,7 @@ class CoreCrudClient(BaseCoreClient):
     def get_item(self, item_id: str, collection_id: str, **kwargs) -> Item:
         """Get item by item id, collection id."""
         item = self.item_table.find_one({"id": item_id, "collection": collection_id})
-        return item
+        return json.loads(dumps(item))
 
     def get_search(
         self,
