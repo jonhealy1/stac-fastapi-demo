@@ -22,6 +22,12 @@ class TransactionsClient(BaseTransactionsClient):
     item_table = client.stac.stac_item
     collection_table = client.stac.stac_collection
     error_check = ErrorChecks(client=client)
+    # item_serializer: Type[serializers.Serializer] = attr.ib(
+    #     default=serializers.ItemSerializer
+    # )
+    # collection_serializer: Type[serializers.Serializer] = attr.ib(
+    #     default=serializers.CollectionSerializer
+    # )
 
     def create_item(self, model: stac_types.Item, **kwargs):
         """Create item."""

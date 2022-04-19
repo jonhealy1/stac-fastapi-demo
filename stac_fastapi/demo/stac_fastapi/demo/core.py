@@ -1,10 +1,12 @@
 """Item crud client."""
 import json
-from typing import Union, Optional, List
+from typing import Union, Optional, List, Type
 from bson.json_util import dumps
 import attr
 from datetime import datetime
+from stac_fastapi.demo import serializers
 from pydantic import ValidationError
+from stac_fastapi.demo.types.error_checks import ErrorChecks
 from stac_fastapi.types.search import BaseSearchPostRequest
 
 from stac_fastapi.demo.config import MongoSettings
@@ -22,6 +24,13 @@ class CoreCrudClient(BaseCoreClient):
     client = settings.create_client
     item_table = client.stac.stac_item
     collection_table = client.stac.stac_collection
+    # error_check = ErrorChecks(client=client)
+    # item_serializer: Type[serializers.Serializer] = attr.ib(
+    #     default=serializers.ItemSerializer
+    # )
+    # collection_serializer: Type[serializers.Serializer] = attr.ib(
+    #     default=serializers.CollectionSerializer
+    # )
 
     def all_collections(self, **kwargs) -> Collections:
         """Read all collections from the database."""
